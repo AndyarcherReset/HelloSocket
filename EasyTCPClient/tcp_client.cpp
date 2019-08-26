@@ -6,7 +6,66 @@
 //Windows系统中导入lib
 #pragma comment (lib, "ws2_32.lib")
 
+enum CMD
+{
+    CMD_LOGIN,
+    CMD_LOGIN_RESULT,
+    CMD_LOGOFF,
+    CMD_LOGOFF_RESULT,
+    CMD_ERROR
+};
 
+struct DataHeader
+{
+    short dataLength;//数据长度
+    short cmd;
+};
+
+//DataPackage
+struct Login : public DataHeader
+{
+    Login()
+    {
+        dataLength = sizeof(Login);
+        cmd = CMD_LOGIN;
+    }
+    char userName[32];
+    char passWord[32];
+};
+
+struct LoginResult : public DataHeader
+{
+    LoginResult()
+    {
+        dataLength = sizeof(LoginResult);
+        cmd = CMD_LOGIN_RESULT;
+        result = 0;
+    }
+    int result;
+
+};
+
+struct LoginOff : public DataHeader
+{
+    LoginOff()
+    {
+        dataLength = sizeof(LoginOff);
+        cmd = CMD_LOGOFF;
+    }
+    char userName[32];
+};
+
+struct LoginOffResult : public DataHeader
+{
+    LoginOffResult()
+    {
+        dataLength = sizeof(LoginOffResult);
+        cmd = CMD_LOGOFF_RESULT;
+        result = 0;
+    }
+    int result;
+
+};
 int main()
 {
     WORD ver = MAKEWORD(2, 2);
@@ -32,21 +91,35 @@ int main()
             scanf("%s", cmdBuf);
             if (strcmp(cmdBuf, "exit") == 0)
             {
+                printf("user exits!");
                 break;
             }
+            else if (strcmp(cmdBuf, "login") == 0)
+            {
+                //send the message to server
+                Login login;
+                strcpy(login.passWord, "Andy");
+                strcpy(login.userName, "Andy");
+                send(_sock, (char *)&login, sizeof(Login), 0);
+
+                //get the message from server
+                LoginResult serverLogin = {};
+                recv(_sock, (char *)&serverLogin, sizeof(LoginResult), 0);
+                printf("Login Result: %d \n", serverLogin.result);
+            }
+            else if (strcmp(cmdBuf, "logout") == 0)
+            {
+                LoginOff longinOff;
+                strcmp(longinOff.userName, "Andy");
+                send(_sock, (char *)&longinOff, sizeof(LoginOff), 0);
+
+                LoginOffResult serverLogoff = {};
+                recv(_sock, (char *)&serverLogoff, sizeof(LoginOffResult), 0);
+                printf("Logoff Result: %d \n", serverLogoff.result);
+                
+            }
             else
-            {
-                send(_sock, cmdBuf, strlen(cmdBuf), 0);
-            }
-
-            //recv the message
-            char recvBuf[256] = {};
-            int nlen = recv(_sock, recvBuf, 256, 0);
-
-            if (nlen > 0)
-            {
-                printf(recvBuf);
-            }
+                printf("unknown command!");
         }
         //close
         closesocket(_sock);

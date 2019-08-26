@@ -14,7 +14,66 @@
 //Windows系统中导入lib
 #pragma comment (lib, "ws2_32.lib")
 
+enum CMD
+{
+    CMD_LOGIN,
+    CMD_LOGIN_RESULT,
+    CMD_LOGOFF,
+    CMD_LOGOFF_RESULT,
+    CMD_ERROR
+};
 
+struct DataHeader
+{
+    short dataLength;//数据长度
+    short cmd;
+};
+
+//DataPackage
+struct Login : public DataHeader
+{
+    Login()
+    {
+        dataLength = sizeof(Login);
+        cmd = CMD_LOGIN;
+    }
+    char userName[32];
+    char passWord[32];
+};
+
+struct LoginResult : public DataHeader
+{
+    LoginResult()
+    {
+        dataLength = sizeof(LoginResult);
+        cmd = CMD_LOGIN_RESULT;
+        result = 0;
+    }
+    int result;
+    
+};
+
+struct LoginOff : public DataHeader
+{
+    LoginOff()
+    {
+        dataLength = sizeof(LoginOff);
+        cmd = CMD_LOGOFF;
+    }
+    char userName[32];
+};
+
+struct LoginOffResult : public DataHeader
+{
+    LoginOffResult()
+    {
+        dataLength = sizeof(LoginOffResult);
+        cmd = CMD_LOGOFF_RESULT;
+        result = 0;
+    }
+    int result;
+
+};
 int main()
 {
     WORD ver = MAKEWORD(2, 2);
@@ -46,35 +105,49 @@ int main()
             _cSock = accept(_sock, (sockaddr*)&clientAddr, &nAddrLne);
             printf("new client: %s \n", inet_ntoa(clientAddr.sin_addr));
 
-            char _recvBuf[128] = {};
             while (true)
             {
+                DataHeader header = {};
                 //get the data from client
-                int nLen = recv(_cSock, _recvBuf, 128, 0);
+                int nLen = recv(_cSock, (char*)&header, sizeof(DataHeader), 0);
                 if (nLen <= 0 )
                 {
                     printf("client quits!");
                     break;
                 }
+     
+                switch (header.cmd)
+                {
+                case CMD_LOGIN:
+                {
+                    Login login = {};
+                    //报头已被接受，内存需偏离
+                    recv(_cSock, (char*)&login + sizeof(DataHeader), sizeof(Login) - sizeof(DataHeader), 0);
+                    printf("收到命令： %d 数据长度： %d \n username = %s , password = %s \n", 
+                        login.cmd, login.dataLength, login.userName, login.passWord);
 
-                // handle the request
-                if (0 == strcmp(_recvBuf, "getName"))
-                {
-                    // send message
-                    char msgBuf[] = "Hello, I am TCP Server!";
-                    send(_cSock, msgBuf, strlen(msgBuf) + 1/*结尾符+1*/, 0);
+                    //to do: check the username and password
+
+                    //send the message
+                    LoginResult loginResult;
+                    send(_cSock, (char *)&loginResult, sizeof(loginResult), 0);
                 }
-                else if (0 == strcmp(_recvBuf, "getAge"))
+                break;
+                case CMD_LOGOFF:
                 {
-                    // send message
-                    char msgBuf[] = "Hello, I am 18!";
-                    send(_cSock, msgBuf, strlen(msgBuf) + 1/*结尾符+1*/, 0);
+                    LoginOff loginOff = {};
+                    int nLen = recv(_cSock, (char*)&loginOff + sizeof(DataHeader), sizeof(LoginOff) - sizeof(DataHeader), 0);
+                    printf("收到命令： %d 数据长度： %d \n ", loginOff.cmd, loginOff.dataLength);
+
+                    LoginOffResult loginOffResult;
+                    send(_cSock, (char *)&loginOffResult, sizeof(LoginOffResult), 0);
                 }
-                else
-                {
-                    // send message
-                    char msgBuf[] = "?????";
-                    send(_cSock, msgBuf, strlen(msgBuf) + 1/*结尾符+1*/, 0);
+                break;
+                default:
+                    header.cmd = CMD_ERROR;
+                    header.dataLength = 0;
+                    send(_cSock, (char *)&header, sizeof(DataHeader), 0);
+                break;
                 }
             }
 
