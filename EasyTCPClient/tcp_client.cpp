@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <WinSock2.h>
+#include <thread>
 
 //Windows系统中导入lib
 #pragma comment (lib, "ws2_32.lib")
@@ -12,6 +13,7 @@ enum CMD
     CMD_LOGIN_RESULT,
     CMD_LOGOFF,
     CMD_LOGOFF_RESULT,
+    CMD_NEW_USER_JOIN,
     CMD_ERROR
 };
 
@@ -66,6 +68,101 @@ struct LoginOffResult : public DataHeader
     int result;
 
 };
+
+struct NewUserJoin : public DataHeader
+{
+    NewUserJoin()
+    {
+        dataLength = sizeof(NewUserJoin);
+        cmd = CMD_NEW_USER_JOIN;
+        socketID = 0;
+    }
+    int socketID;
+
+};
+
+int processor(SOCKET _cSock)
+{
+    //缓冲区
+    char szRecv[1024] = {};
+    //get the data from client
+    int nLen = recv(_cSock, szRecv, sizeof(DataHeader), 0);
+    DataHeader *header = (DataHeader *)szRecv;
+    if (nLen <= 0)
+    {
+        printf("与服务器断开连接!\n", _cSock);
+        return -1;
+    }
+
+    switch (header->cmd)
+    {
+    case CMD_LOGIN_RESULT:
+    {
+        recv(_cSock, szRecv + sizeof(DataHeader), header->dataLength - sizeof(DataHeader), 0);
+        LoginResult* loginResult = (LoginResult*)szRecv;
+        printf("收到服务器数据： %d  数据长度： %d \n ", loginResult->cmd, loginResult->dataLength);
+    }
+    break;
+    case CMD_LOGOFF_RESULT:
+    {
+        recv(_cSock, szRecv + sizeof(DataHeader), header->dataLength - sizeof(DataHeader), 0);
+        LoginOffResult* loginResult = (LoginOffResult*)szRecv;
+        printf("收到服务器数据： %d  数据长度： %d \n ", loginResult->cmd, loginResult->dataLength);
+    }
+    break;
+    case CMD_NEW_USER_JOIN:
+    {
+        recv(_cSock, szRecv + sizeof(DataHeader), header->dataLength - sizeof(DataHeader), 0);
+        NewUserJoin* newUserJoin = (NewUserJoin*)szRecv;
+        printf("收到服务器数据： %d  数据长度： %d \n ", newUserJoin->cmd, newUserJoin->dataLength);
+    }
+    break;
+    }
+    // close client 
+    //closesocket(_cSock);
+}
+bool g_bRun = true;
+void cmdThread(SOCKET _sock)
+{
+    while (true)
+    {
+        char cmdBuf[256] = {};
+        scanf("%s", cmdBuf);
+
+        if (strcmp(cmdBuf, "exit") == 0)
+        {
+            printf("退出cmdThread线程!");
+            g_bRun = false;
+            break;
+        }
+        else if (strcmp(cmdBuf, "login") == 0)
+        {
+            //send the message to server
+            Login login;
+            strcpy(login.passWord, "Andy");
+            strcpy(login.userName, "Andy");
+            send(_sock, (char *)&login, sizeof(Login), 0);
+
+            //get the message from server
+            LoginResult serverLogin = {};
+            recv(_sock, (char *)&serverLogin, sizeof(LoginResult), 0);
+            printf("Login Result: %d \n 数据长度： %d \n", serverLogin.result, serverLogin.dataLength);
+        }
+        else if (strcmp(cmdBuf, "logout") == 0)
+        {
+            LoginOff longinOff;
+            strcmp(longinOff.userName, "Andy");
+            send(_sock, (char *)&longinOff, sizeof(LoginOff), 0);
+
+            LoginOffResult serverLogoff = {};
+            recv(_sock, (char *)&serverLogoff, sizeof(LoginOffResult), 0);
+            printf("Logoff Result: %d \n 数据长度： %d \n", serverLogoff.result, serverLogoff.dataLength);
+
+        }
+        else
+            printf("unknown command!");
+    }
+}
 int main()
 {
     WORD ver = MAKEWORD(2, 2);
@@ -84,42 +181,36 @@ int main()
 
     if (ret != SOCKET_ERROR)
     {
-        char cmdBuf[128] = {};
+        
+        std::thread  t1(cmdThread, _sock);
+        t1.detach();
 
-        while (true)
+        while (g_bRun)
         {
-            scanf("%s", cmdBuf);
-            if (strcmp(cmdBuf, "exit") == 0)
-            {
-                printf("user exits!");
-                break;
-            }
-            else if (strcmp(cmdBuf, "login") == 0)
-            {
-                //send the message to server
-                Login login;
-                strcpy(login.passWord, "Andy");
-                strcpy(login.userName, "Andy");
-                send(_sock, (char *)&login, sizeof(Login), 0);
+            fd_set fdRead;
+            FD_ZERO(&fdRead);
+            FD_SET(_sock, &fdRead);
 
-                //get the message from server
-                LoginResult serverLogin = {};
-                recv(_sock, (char *)&serverLogin, sizeof(LoginResult), 0);
-                printf("Login Result: %d \n", serverLogin.result);
-            }
-            else if (strcmp(cmdBuf, "logout") == 0)
-            {
-                LoginOff longinOff;
-                strcmp(longinOff.userName, "Andy");
-                send(_sock, (char *)&longinOff, sizeof(LoginOff), 0);
+            timeval t = { 0,0 };
+            int ret = select(_sock, &fdRead, NULL, NULL, &t);
 
-                LoginOffResult serverLogoff = {};
-                recv(_sock, (char *)&serverLogoff, sizeof(LoginOffResult), 0);
-                printf("Logoff Result: %d \n", serverLogoff.result);
-                
+            if (ret < 0)
+            {
+                printf("select任务结束！\n");
             }
-            else
-                printf("unknown command!");
+
+            if (FD_ISSET(_sock, &fdRead))
+            {
+                FD_CLR(_sock, &fdRead);
+
+                if (-1 == processor(_sock))
+                {
+                    printf("select任务结束！\n");
+                    break;
+                }
+            }
+
+            //printf("空闲时间处理其他业务...\n");
         }
         //close
         closesocket(_sock);
